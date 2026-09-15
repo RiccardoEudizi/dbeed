@@ -198,7 +198,7 @@ skips engine). `↑/↓` choose · `enter` next · `esc` cancel.
 dbeed (Bun: commander + @opentui/solid)
   │  ensures dbeed-server is up (spawns detached if needed)
   ▼
-dbeed-server (Go, stdlib only) — 127.0.0.1:random-port, token auth
+dbeed-server (Go, stdlib only) — unix socket + token auth
   │  engines: native pg/sqlite, docker pg · state: state.json
   ▼
 postgres (pg_ctl / docker) · sqlite files
@@ -219,15 +219,15 @@ postgres (pg_ctl / docker) · sqlite files
 |--------------------|--------------------------------------|--------------------------------------|
 | `DBEED_DATA_DIR`   | `~/.local/share/dbeed` (`$XDG_DATA_HOME/dbeed`) | state, instance data, server.json |
 | `DBEED_SERVER_BIN` | searched next to binary, `dist/`, `PATH` | `dbeed-server` executable         |
-| `DBEED_PORT`       | `0` (random)                         | server listen port (server-side)     |
 
 Layout of the data dir: `state.json` (instances, passwords in plaintext —
-local dev only), `server.json` (port/pid/token — never commit),
-`server.log`, `data/<name>/`.
+local dev only), `server.json` (socket/pid/token — never commit),
+`server.log`, `data/<name>/`, `dbeed.sock`.
 
-## HTTP API
+## HTTP API (over unix socket)
 
-All but `/healthz` require the `X-Dbeed-Token` header.
+All but `/healthz` require the `X-Dbeed-Token` header. Clients connect via the
+unix socket at `~/.local/share/dbeed/dbeed.sock`.
 
 ```
 GET    /healthz

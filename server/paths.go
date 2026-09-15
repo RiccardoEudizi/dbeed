@@ -24,6 +24,7 @@ func StateFile() string          { return filepath.Join(BaseDir(), "state.json")
 func ServerFile() string         { return filepath.Join(BaseDir(), "server.json") }
 func DataDir(name string) string { return filepath.Join(BaseDir(), "data", name) }
 func BinDir() string             { return filepath.Join(BaseDir(), "bin") }
+func SocketPath() string         { return filepath.Join(BaseDir(), "dbeed.sock") }
 
 func EnsureBase() error {
 	for _, d := range []string{BaseDir(), filepath.Join(BaseDir(), "data"), BinDir()} {

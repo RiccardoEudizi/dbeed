@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { withLoader } from "./loader";
+import { request } from "./api";
 
 function baseDir(): string {
   if (process.env.DBEED_DATA_DIR) return process.env.DBEED_DATA_DIR;
@@ -37,10 +38,11 @@ function findServerBin(): string | null {
   return null;
 }
 
-async function healthy(port: number, token: string): Promise<boolean> {
+async function healthy(info: { socket?: string; port: number; token: string }): Promise<boolean> {
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/healthz`);
-    return res.ok;
+    if (!info.socket) return false;
+    const res = await request(info.socket, "/healthz", {});
+    return (res.statusCode ?? 0) >= 200 && (res.statusCode ?? 0) < 300;
   } catch {
     return false;
   }
@@ -53,10 +55,10 @@ export function serverOwned(): boolean {
   return owned;
 }
 
-async function waitHealthy(info: { port: number; token: string }, tries: number, delayMs: number): Promise<boolean> {
+async function waitHealthy(info: { socket?: string; port: number; token: string }, tries: number, delayMs: number): Promise<boolean> {
   for (let i = 0; i < tries; i++) {
     await new Promise((r) => setTimeout(r, delayMs));
-    if (await healthy(info.port, info.token)) return true;
+    if (await healthy(info)) return true;
   }
   return false;
 }
@@ -70,12 +72,12 @@ function pidAlive(pid: number): boolean {
   }
 }
 
-export async function ensureServer(): Promise<{ port: number; token: string }> {
+export async function ensureServer(): Promise<{ socket?: string; port: number; token: string }> {
   const file = path.join(baseDir(), "server.json");
   try {
     const raw = fs.readFileSync(file, "utf8");
     const info = JSON.parse(raw);
-    if (info.port && (await healthy(info.port, info.token))) return info;
+    if (info.socket && (await healthy(info))) return info;
     // pid alive but unhealthy -> another client is booting it; wait with status
     if (info.pid && pidAlive(info.pid)) {
       const ok = await withLoader("Starting server", () => waitHealthy(info, 10, 300), { immediate: true });
@@ -111,7 +113,7 @@ export async function ensureServer(): Promise<{ port: number; token: string }> {
         try {
           const raw = fs.readFileSync(file, "utf8");
           const info = JSON.parse(raw);
-          if (info.port && (await healthy(info.port, info.token))) return info;
+          if (info.socket && (await healthy(info))) return info;
         } catch {}
       }
       throw new Error(`dbeed-server failed to start (see ${logFile})`);

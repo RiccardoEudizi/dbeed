@@ -369,9 +369,10 @@ func writeErr(w http.ResponseWriter, code int, msg string) {
 // --- server discovery ---
 
 type ServerInfo struct {
-	Port  int    `json:"port"`
-	PID   int    `json:"pid"`
-	Token string `json:"token"`
+	Port   int    `json:"port"`
+	PID    int    `json:"pid"`
+	Token  string `json:"token"`
+	Socket string `json:"socket,omitempty"`
 }
 
 func LoadServerInfo() (ServerInfo, bool) {

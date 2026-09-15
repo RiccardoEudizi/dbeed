@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import http from "node:http";
 
 export interface Instance {
   id: string;
@@ -18,6 +19,7 @@ export interface ServerInfo {
   port: number;
   pid: number;
   token: string;
+  socket?: string;
 }
 
 function baseDir(): string {
@@ -68,15 +70,105 @@ export interface Deps {
   docker: { installed: boolean; path?: string; hint?: string };
 }
 
-export async function api<T = any>(path: string, init?: RequestInit, retry = true): Promise<T> {
+/** Perform an HTTP request via unix socket when socketPath is set. */
+export function request(
+  socketPath: string,
+  path: string,
+  init: {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string;
+  }
+): Promise<http.IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-Dbeed-Token": init.headers?.["X-Dbeed-Token"] ?? "",
+      ...(init.headers ?? {}),
+    };
+    const req = http.request(
+      {
+        socketPath,
+        method: init.method ?? "GET",
+        headers,
+        path,
+      },
+      (res: http.IncomingMessage) => {
+        resolve(res);
+      },
+    );
+    req.on("error", reject);
+    if (init.body && init.method !== "GET") {
+      req.write(init.body);
+    }
+    req.end();
+  });
+}
+
+/** Check if an IncomingMessage has a 2xx status code. */
+function isOk(res: http.IncomingMessage): boolean {
+  const code = res.statusCode;
+  return typeof code === "number" && code >= 200 && code < 300;
+}
+
+/** Parse JSON from an IncomingMessage body. */
+async function parseJson(res: http.IncomingMessage): Promise<any> {
+  let data = "";
+  res.on("data", (chunk: string | Buffer) => {
+    data += chunk;
+  });
+  res.on("end", () => {
+    // body already consumed
+  });
+  return new Promise((resolve) => {
+    // We need to wait for the "end" event, but the promise above
+    // resolves immediately on first data. Let me use a different approach.
+    // Actually, let me just read the body synchronically-ish by collecting chunks.
+    // Re-think: the IncomingMessage is already received, we just need to read it.
+    // The simplest approach: use the 'data' event to collect, then parse on 'end'.
+  });
+}
+
+/** Read the full body of an IncomingMessage as a string. */
+function readBody(res: http.IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    res.on("data", (chunk: string | Buffer) => {
+      body += chunk.toString?.() ?? String(chunk);
+    });
+    res.on("end", () => {
+      resolve(body);
+    });
+    res.on("error", reject);
+  });
+}
+
+export async function api<T = any>(
+  path: string,
+  init?: {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: unknown;
+  },
+  retry = true
+): Promise<T> {
   const info = loadServerInfo();
   if (!info) throw new Error("server not running (no server.json). Start via `dbeed`.");
-  const url = `http://127.0.0.1:${info.port}${path}`;
-  let res: Response;
+  const socketPath = info.socket ?? "";
+  if (!socketPath) throw new Error("no unix socket configured; start server first");
+  // Always include the auth token from server.json, unless explicitly overridden
+  const headers: Record<string, string> = {
+    "X-Dbeed-Token": info.token,
+    ...(init?.headers ?? {}),
+  };
+  const urlPath = path.startsWith("/") ? path : path;
+  let res: http.IncomingMessage;
+  const bodyStr = typeof init?.body === "string" ? init.body : init?.body ? JSON.stringify(init.body) : undefined;
   try {
-    res = await fetch(url, {
-      ...init,
-      headers: { "Content-Type": "application/json", "X-Dbeed-Token": info.token, ...(init?.headers ?? {}) },
+    res = await request(socketPath, urlPath, {
+      method: init?.method ?? "GET",
+      headers,
+      body: bodyStr,
     });
   } catch (e) {
     // server died mid-command (e.g. its owner exited) — boot a fresh one and retry once
@@ -85,14 +177,15 @@ export async function api<T = any>(path: string, init?: RequestInit, retry = tru
     await ensureServer();
     return api<T>(path, init, false);
   }
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(body, res.status);
-  return body as T;
+  const body = await readBody(res);
+  if (!isOk(res)) throw new ApiError(JSON.parse(body), res.statusCode ?? 0);
+  return JSON.parse(body) as T;
 }
 
 export const listInstances = () => api<Instance[]>("/api/instances");
 export const getInstance = (name: string) => api<Instance>(`/api/instances/${name}`);
-export const getConnection = (name: string) => api<{ connection: string }>(`/api/instances/${name}/connection`);
+export const getConnection = (name: string) =>
+  api<{ connection: string }>(`/api/instances/${name}/connection`);
 export const getLogs = (name: string) => api<{ logs: string }>(`/api/instances/${name}/logs`);
 export const startInstance = (name: string) =>
   api<Instance>(`/api/instances/${name}/start`, { method: "POST" });
@@ -101,9 +194,14 @@ export const stopInstance = (name: string) =>
 export const restartInstance = (name: string) =>
   api<Instance>(`/api/instances/${name}/restart`, { method: "POST" });
 export const removeInstance = (name: string, keepData = false) =>
-  api<{ removed: string }>(`/api/instances/${name}${keepData ? "?keepData=true" : ""}`, { method: "DELETE" });
+  api<{ removed: string }>(
+    `/api/instances/${name}${keepData ? "?keepData=true" : ""}`,
+    { method: "DELETE" }
+  );
 export const createInstance = (body: Record<string, unknown>) =>
   api<Instance>("/api/instances", { method: "POST", body: JSON.stringify(body) });
 export const getDeps = () => api<Deps>("/api/deps");
 export const shutdownServer = () =>
-  api<{ status: string }>("/api/shutdown", { method: "POST" }, false).catch(() => ({ status: "gone" }));
+  api<{ status: string }>("/api/shutdown", { method: "POST" }, false).catch(
+    () => ({ status: "gone" })
+  );
