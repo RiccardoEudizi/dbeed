@@ -14,8 +14,10 @@ import {
   getInstance,
   getLogs,
   getDeps,
+  dataDir,
   loadServerInfo,
   shutdownServer,
+  type Instance,
 } from "./api";
 
 const program = new Command();
@@ -63,6 +65,36 @@ program
     console.log(inst.connection);
   });
 
+// runSystemCommand runs a shell command with inherited stdin (so sudo can
+// prompt on a TTY) while stdout/stderr are piped and collapsed onto the
+// purple loader line. Returns the exit code.
+async function runSystemCommand(label: string, command: string): Promise<number> {
+  const stdin = process.stdin.isTTY ? ("inherit" as const) : ("ignore" as const);
+  return withLoader(
+    label,
+    async (ctl) => {
+      const proc = Bun.spawn(["sh", "-c", command], {
+        stdin,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      await Promise.all([
+        forwardLines(proc.stdout, (line) => ctl.status(line)),
+        forwardLines(proc.stderr, (line) => ctl.status(line)),
+      ]);
+      return proc.exited;
+    },
+    { immediate: true },
+  );
+}
+
+async function askYesNo(question: string): Promise<boolean> {
+  const rl = (await import("node:readline/promises")).createInterface({ input: process.stdin, output: process.stdout });
+  const ans = (await rl.question(question)).trim().toLowerCase();
+  rl.close();
+  return ans === "y" || ans === "yes";
+}
+
 // runPostgresInstall executes the system package install for postgres
 // binaries (attached to the TTY so sudo can prompt) and re-checks deps.
 async function runPostgresInstall(installCommand: string | undefined, hint: string | undefined): Promise<boolean> {
@@ -71,27 +103,7 @@ async function runPostgresInstall(installCommand: string | undefined, hint: stri
     return false;
   }
   console.log(`Installing PostgreSQL via: ${installCommand}`);
-  // async spawn (not spawnSync) so the loader animates during the install.
-  // Child output is piped and collapsed onto the loader line; stdin stays
-  // attached to the TTY so sudo can prompt (it reads /dev/tty directly).
-  const stdin = process.stdin.isTTY ? ("inherit" as const) : ("ignore" as const);
-  const code = await withLoader(
-    "Installing PostgreSQL",
-    async (ctl) => {
-      const proc = Bun.spawn(["sh", "-c", installCommand], {
-        stdin,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      await Promise.all([
-        forwardLines(proc.stdout, (line) => ctl.status(line)),
-        forwardLines(proc.stderr, (line) => ctl.status(line)),
-        proc.exited,
-      ]);
-      return proc.exitCode;
-    },
-    { immediate: true },
-  );
+  const code = await runSystemCommand("Installing PostgreSQL", installCommand);
   if (code !== 0) {
     console.error(`install failed (exit ${code}). Install PostgreSQL manually or retry with --engine docker.`);
     return false;
@@ -126,6 +138,127 @@ program
     const ok = await runPostgresInstall(deps.postgres.installCommand, deps.postgres.hint);
     if (!ok) process.exit(1);
     console.log("postgres binaries installed.");
+  });
+
+program
+  .command("uninstall [db]")
+  .description("uninstall system dependencies for a db (mirror of install)")
+  .option("-f, --force", "stop dbeed native postgres instances first instead of refusing")
+  .action(async (db?: string, opts?: { force?: boolean }) => {
+    const target = (db ?? "postgres").toLowerCase();
+    if (target !== "postgres" && target !== "sqlite") {
+      console.error(`error: unsupported db ${JSON.stringify(db)} (uninstall supports: postgres|sqlite)`);
+      process.exit(1);
+    }
+    if (target === "sqlite") {
+      console.log("sqlite has no system install — nothing to uninstall.");
+      return;
+    }
+    const deps = await withServer(() => getDeps());
+    if (!deps.postgres.installed) {
+      console.log("postgres is not installed (nothing to do).");
+      return;
+    }
+    if (!deps.postgres.uninstallCommand) {
+      console.error(`error: no supported package manager detected. Remove the ${deps.postgres.package ?? "postgresql"} package manually.`);
+      process.exit(1);
+    }
+    const list = await withServer(() => listInstances());
+    const nativePg = list.filter((i) => i.db === "postgres" && i.engine === "native");
+    if (nativePg.length > 0 && !opts?.force) {
+      console.error(
+        `refusing: ${nativePg.length} dbeed native postgres instance(s) still exist (${nativePg.map((i) => i.name).join(", ")}). ` +
+          `Remove them first, or re-run with --force to stop them and continue.`,
+      );
+      process.exit(1);
+    }
+    for (const inst of nativePg) {
+      try {
+        await withServer(() => stopInstance(inst.name));
+        console.log(`stopped ${inst.name}`);
+      } catch (e: any) {
+        console.error(`warning: could not stop ${inst.name}: ${e.message}`);
+      }
+    }
+    const dockers = list.filter((i) => i.db === "postgres" && i.engine === "docker" && i.status === "running");
+    if (dockers.length > 0) {
+      console.log(`note: ${dockers.length} docker instance(s) keep running (unaffected by system uninstall).`);
+    }
+    console.log(`Uninstalling PostgreSQL via: ${deps.postgres.uninstallCommand}`);
+    const code = await runSystemCommand("Uninstalling PostgreSQL", deps.postgres.uninstallCommand);
+    if (code !== 0) {
+      console.error(`uninstall failed (exit ${code}). Remove the package manually.`);
+      process.exit(1);
+    }
+    const after = await withServer(() => getDeps());
+    if (after.postgres.installed) {
+      console.error("package removed but postgres binaries are still on PATH (another installation?).");
+      process.exit(1);
+    }
+    console.log("postgres uninstalled.");
+  });
+
+program
+  .command("purge")
+  .description("uninstall dbeed itself: remove all instances, stop the server, delete data")
+  .option("--keep-data", "stop instances but keep the data dir + state")
+  .option("-f, --force", "skip confirmation")
+  .action(async (opts: { keepData?: boolean; force?: boolean }) => {
+    if (!opts.force) {
+      if (!process.stdin.isTTY) {
+        console.error("error: refusing to purge without --force when not interactive.");
+        process.exit(1);
+      }
+      const ok = await askYesNo("Remove ALL dbeed instances and data? [y/N] ");
+      if (!ok) {
+        console.log("aborted.");
+        return;
+      }
+    }
+    let list: Instance[] = [];
+    try {
+      await ensureServer();
+      list = await listInstances();
+    } catch (e: any) {
+      console.error(`warning: server unavailable (${e.message}) — removing data dir only.`);
+    }
+    for (const inst of list) {
+      try {
+        if (opts.keepData) {
+          await stopInstance(inst.name);
+          console.log(`stopped ${inst.name}`);
+        } else {
+          await removeInstance(inst.name);
+          console.log(`removed ${inst.name}`);
+        }
+      } catch (e: any) {
+        console.error(`warning: ${opts.keepData ? "stop" : "remove"} ${inst.name} failed: ${e.message}`);
+      }
+    }
+    try {
+      await shutdownServer();
+    } catch {}
+    const fs = await import("node:fs");
+    const dir = dataDir();
+    try {
+      if (opts.keepData) {
+        fs.rmSync(`${dir}/server.json`, { force: true });
+        fs.rmSync(`${dir}/server.log`, { force: true });
+        console.log(`kept data in ${dir} (server files removed).`);
+      } else {
+        fs.rmSync(dir, { recursive: true, force: true });
+        console.log(`deleted ${dir}.`);
+      }
+    } catch (e: any) {
+      console.error(`warning: could not delete ${dir}: ${e.message}`);
+    }
+    console.log("dbeed uninstalled. Leftovers to remove by hand:");
+    const srvBin = process.env.DBEED_SERVER_BIN;
+    if (srvBin) console.log(`  rm ${srvBin}   # dbeed-server binary`);
+    else console.log("  remove the dbeed-server binary (DBEED_SERVER_BIN or PATH)");
+    console.log("  remove the dbeed binary itself from your PATH");
+    console.log("  system postgres is untouched — `dbeed uninstall postgres` needs a server, use your package manager now");
+    console.log("  pulled images stay — e.g. `docker rmi postgres:16`");
   });
 
 program

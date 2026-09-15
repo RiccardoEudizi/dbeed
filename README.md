@@ -122,6 +122,8 @@ dbeed connection NAME             # print only the connection string (stdout-saf
 dbeed info NAME                   # full instance record as JSON
 dbeed logs NAME                   # server log tail / docker logs
 dbeed remove NAME [--keep-data]   # alias: rm — uninstall what dbeed created
+dbeed uninstall [postgres|sqlite] # remove system package (mirror of install)
+dbeed purge [--keep-data] [-f]    # uninstall dbeed itself (see below)
 dbeed server                      # show server discovery info (port/pid/token)
 dbeed --tui                       # mini TUI (also the default with no args)
 ```
@@ -129,6 +131,17 @@ dbeed --tui                       # mini TUI (also the default with no args)
 `create` without `--db`/`--name` prompts interactively. Ports default to
 `5432` and auto-bump when taken. `remove` never touches databases it didn't
 create.
+
+## Uninstalling
+
+- `dbeed uninstall postgres` removes the system postgres package (mirror of
+  `install`). Refuses while dbeed native postgres instances exist — remove
+  them first or pass `--force` (stops them, keeps their data for reinstall).
+  Docker instances are unaffected. `uninstall sqlite` is a no-op.
+- `dbeed purge` uninstalls dbeed itself: confirms (unless `-f`), removes every
+  instance, stops the server, deletes the data dir, then prints the manual
+  leftovers (both binaries, system postgres, pulled images). `--keep-data`
+  stops instances but keeps `data/` + `state.json` for later rediscovery.
 
 ## Connection strings
 

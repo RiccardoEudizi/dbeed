@@ -12,12 +12,13 @@ import (
 // DepStatus describes whether postgres system binaries are available and,
 // if not, how to install them with the system package manager.
 type DepStatus struct {
-	Installed      bool              `json:"installed"`
-	Binaries       map[string]string `json:"binaries,omitempty"`
-	Manager        string            `json:"manager,omitempty"`
-	Package        string            `json:"package,omitempty"`
-	InstallCommand string            `json:"installCommand,omitempty"`
-	Hint           string            `json:"hint,omitempty"`
+	Installed        bool              `json:"installed"`
+	Binaries         map[string]string `json:"binaries,omitempty"`
+	Manager          string            `json:"manager,omitempty"`
+	Package          string            `json:"package,omitempty"`
+	InstallCommand   string            `json:"installCommand,omitempty"`
+	UninstallCommand string            `json:"uninstallCommand,omitempty"`
+	Hint             string            `json:"hint,omitempty"`
 }
 
 // MissingBinariesError is returned when postgres native provisioning is
@@ -65,25 +66,26 @@ func findPgBin(name string) string {
 }
 
 type pgManagerDef struct {
-	bin     string // package manager binary
-	pkg     string // postgres package name
-	install string // install command template, %s = sudo prefix ("" or "sudo ")
+	bin       string // package manager binary
+	pkg       string // postgres package name
+	install   string // install command template, %s = sudo prefix ("" or "sudo ")
+	uninstall string // uninstall command template, %s = sudo prefix
 }
 
 func detectPgManager() (pgManagerDef, bool) {
 	if runtime.GOOS == "darwin" {
 		if _, err := exec.LookPath("brew"); err == nil {
-			return pgManagerDef{bin: "brew", pkg: "postgresql", install: "brew install postgresql"}, true
+			return pgManagerDef{bin: "brew", pkg: "postgresql", install: "brew install postgresql", uninstall: "brew uninstall postgresql"}, true
 		}
 		return pgManagerDef{}, false
 	}
 	candidates := []pgManagerDef{
-		{bin: "apt-get", pkg: "postgresql", install: "%sapt-get update && %sapt-get install -y postgresql"},
-		{bin: "dnf", pkg: "postgresql-server", install: "%sdnf install -y postgresql-server"},
-		{bin: "yum", pkg: "postgresql-server", install: "%syum install -y postgresql-server"},
-		{bin: "pacman", pkg: "postgresql", install: "%spacman -S --noconfirm postgresql"},
-		{bin: "apk", pkg: "postgresql", install: "%sapk add postgresql"},
-		{bin: "zypper", pkg: "postgresql-server", install: "%szypper install -y postgresql-server"},
+		{bin: "apt-get", pkg: "postgresql", install: "%sapt-get update && %sapt-get install -y postgresql", uninstall: "%sapt-get remove -y postgresql"},
+		{bin: "dnf", pkg: "postgresql-server", install: "%sdnf install -y postgresql-server", uninstall: "%sdnf remove -y postgresql-server"},
+		{bin: "yum", pkg: "postgresql-server", install: "%syum install -y postgresql-server", uninstall: "%syum remove -y postgresql-server"},
+		{bin: "pacman", pkg: "postgresql", install: "%spacman -S --noconfirm postgresql", uninstall: "%spacman -R --noconfirm postgresql"},
+		{bin: "apk", pkg: "postgresql", install: "%sapk add postgresql", uninstall: "%sapk del postgresql"},
+		{bin: "zypper", pkg: "postgresql-server", install: "%szypper install -y postgresql-server", uninstall: "%szypper remove -y postgresql-server"},
 	}
 	for _, c := range candidates {
 		if _, err := exec.LookPath(c.bin); err == nil {
@@ -104,6 +106,8 @@ func sudoPrefix() string {
 }
 
 // PostgresDep checks for real postgres binaries on this machine.
+// Manager/package (un)install commands are reported whenever a supported
+// package manager is detected, even when binaries are already installed.
 func PostgresDep() DepStatus {
 	bins := map[string]string{}
 	missing := []string{}
@@ -114,20 +118,20 @@ func PostgresDep() DepStatus {
 			missing = append(missing, b)
 		}
 	}
-	if len(missing) == 0 {
-		return DepStatus{Installed: true, Binaries: bins}
-	}
-	dep := DepStatus{Installed: false}
+	dep := DepStatus{Installed: len(missing) == 0, Binaries: bins}
 	mgr, ok := detectPgManager()
 	if !ok {
-		dep.Hint = fmt.Sprintf("missing binaries (%s); no supported package manager found (apt-get/dnf/pacman/apk/zypper/brew). Install PostgreSQL manually or use --engine docker", strings.Join(missing, ", "))
+		if !dep.Installed {
+			dep.Hint = fmt.Sprintf("missing binaries (%s); no supported package manager found (apt-get/dnf/pacman/apk/zypper/brew). Install PostgreSQL manually or use --engine docker", strings.Join(missing, ", "))
+		}
 		return dep
 	}
 	prefix := sudoPrefix()
 	dep.Manager = mgr.bin
 	dep.Package = mgr.pkg
 	dep.InstallCommand = strings.ReplaceAll(mgr.install, "%s", prefix)
-	if prefix == "" && os.Geteuid() != 0 {
+	dep.UninstallCommand = strings.ReplaceAll(mgr.uninstall, "%s", prefix)
+	if !dep.Installed && prefix == "" && os.Geteuid() != 0 {
 		dep.Hint = fmt.Sprintf("missing binaries (%s); no sudo found and not running as root — install the %q package manually or use --engine docker", strings.Join(missing, ", "), mgr.pkg)
 	}
 	return dep

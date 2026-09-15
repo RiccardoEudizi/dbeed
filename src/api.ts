@@ -27,6 +27,11 @@ function baseDir(): string {
   return `${home}/.local/share/dbeed`;
 }
 
+/** Local data dir (state, instance data, server discovery). */
+export function dataDir(): string {
+  return baseDir();
+}
+
 export function loadServerInfo(): ServerInfo | null {
   try {
     const data = fs.readFileSync(`${baseDir()}/server.json`, "utf8");
@@ -57,6 +62,7 @@ export interface Deps {
     manager?: string;
     package?: string;
     installCommand?: string;
+    uninstallCommand?: string;
     hint?: string;
   };
   docker: { installed: boolean; path?: string; hint?: string };

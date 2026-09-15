@@ -52,8 +52,35 @@ func TestPostgresDepMissingReportsManager(t *testing.T) {
 	}
 }
 
-func TestMissingBinariesErrorMentionsDocker(t *testing.T) {
-	err := &MissingBinariesError{Dep: DepStatus{Hint: "x"}}
+func TestPostgresDepReportsUninstallCommand(t *testing.T) {
+	dir := t.TempDir()
+	writeFakeBin(t, dir, "apt-get")
+	t.Setenv("PATH", dir)
+	t.Setenv("DBEED_DATA_DIR", t.TempDir())
+
+	// missing binaries: both commands reported
+	missing := PostgresDep()
+	if missing.Installed {
+		t.Fatalf("expected not installed, got %+v", missing)
+	}
+	if !strings.Contains(missing.UninstallCommand, "apt-get remove -y postgresql") {
+		t.Fatalf("unexpected uninstall command: %q", missing.UninstallCommand)
+	}
+
+	// installed binaries: uninstall command still reported
+	for _, b := range pgRequiredBins {
+		writeFakeBin(t, dir, b)
+	}
+	present := PostgresDep()
+	if !present.Installed {
+		t.Fatalf("expected installed, got %+v", present)
+	}
+	if !strings.Contains(present.UninstallCommand, "apt-get remove -y postgresql") {
+		t.Fatalf("unexpected uninstall command: %q", present.UninstallCommand)
+	}
+}
+
+func TestMissingBinariesErrorMentionsDocker(t *testing.T) {	err := &MissingBinariesError{Dep: DepStatus{Hint: "x"}}
 	if !strings.Contains(err.Error(), "--engine docker") {
 		t.Fatalf("error should mention docker fallback: %q", err.Error())
 	}
