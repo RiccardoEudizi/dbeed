@@ -111,24 +111,6 @@ function isOk(res: http.IncomingMessage): boolean {
   return typeof code === "number" && code >= 200 && code < 300;
 }
 
-/** Parse JSON from an IncomingMessage body. */
-async function parseJson(res: http.IncomingMessage): Promise<any> {
-  let data = "";
-  res.on("data", (chunk: string | Buffer) => {
-    data += chunk;
-  });
-  res.on("end", () => {
-    // body already consumed
-  });
-  return new Promise((resolve) => {
-    // We need to wait for the "end" event, but the promise above
-    // resolves immediately on first data. Let me use a different approach.
-    // Actually, let me just read the body synchronically-ish by collecting chunks.
-    // Re-think: the IncomingMessage is already received, we just need to read it.
-    // The simplest approach: use the 'data' event to collect, then parse on 'end'.
-  });
-}
-
 /** Read the full body of an IncomingMessage as a string. */
 function readBody(res: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
