@@ -157,7 +157,7 @@ function App(props: { owned: boolean }) {
     <box borderStyle="single" borderColor="#334155" flexDirection="row" width="100%" paddingLeft={1} paddingRight={1} gap={2}>
       <box flexDirection="column" width={21}>
         <ascii_font text="DB" font="block" color="#a855f7" />
-        <text fg="#64748b">dbeed</text>
+        <text>🐝</text>
       </box>
       <box flexDirection="column" flexGrow={1}>
         <text fg="#7dd3fc">dbeed · {counts()}</text>
