@@ -1,0 +1,18 @@
+# build outputs
+dist/
+node_modules/
+
+# compiled binaries
+dbeed-server
+dbeed
+
+# local runtime state — never commit:
+# server.json holds an auth token, state.json holds DB passwords in plaintext
+server.json
+state.json
+*.log
+data/
+
+# env files
+.env
+.env.*

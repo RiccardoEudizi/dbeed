@@ -1,0 +1,23 @@
+{
+  "name": "dbeed",
+  "version": "0.1.0",
+  "description": "Disposal DB fast setup for local development",
+  "type": "module",
+  "bin": {
+    "dbeed": "./src/cli.ts"
+  },
+  "scripts": {
+    "start": "bun run src/cli.ts",
+    "compile": "bun build ./src/cli.ts --compile --outfile ./dist/dbeed"
+  },
+  "dependencies": {
+    "@opentui/core": "latest",
+    "@opentui/solid": "latest",
+    "commander": "^14.0.0",
+    "solid-js": "1.9.12"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "bun-types": "latest"
+  }
+}
