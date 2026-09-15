@@ -1,26 +1,62 @@
 // Purple indeterminate loader bar for headless CLI waits.
-// Renders on stderr so stdout stays clean for scripting (connection strings).
+// Renders inline on stderr so stdout stays clean for scripting (connection strings).
 // Silent when stderr is not a TTY.
+//
+// The bar itself is drawn offscreen in an OpenTUI framebuffer
+// (`OptimizedBuffer`, 1 row) and then serialized to a single ANSI line:
+// thin `─` rail, all-purple moving segment with soft (faded) edges.
 
 const RESET = "\x1b[0m";
 const DIM = "\x1b[38;2;100;90;130m";
 
-// Polished gradient glow bar: a bright head gliding over a purple gradient
-// block on a dim rail, with elapsed time. All truecolor cells on stderr.
-const HEAD: [number, number, number] = [245, 243, 255];
-const FROM: [number, number, number] = [216, 180, 254];
+// All-purple ramp: deep violet tail -> light lavender -> near-white head.
+// No other hues; edge softness comes from blending toward the rail.
 const TO: [number, number, number] = [124, 58, 237];
+const FROM: [number, number, number] = [216, 180, 254];
+const HEAD: [number, number, number] = [245, 243, 255];
+const RAIL: [number, number, number] = [100, 90, 130];
 
-function fg([r, g, b]: [number, number, number]): string {
-  return `\x1b[38;2;${r};${g};${b}m`;
-}
+type RGB = [number, number, number];
 
-function lerp(a: [number, number, number], b: [number, number, number], t: number): [number, number, number] {
+function lerp(a: RGB, b: RGB, t: number): RGB {
   return [
     Math.round(a[0] + (b[0] - a[0]) * t),
     Math.round(a[1] + (b[1] - a[1]) * t),
     Math.round(a[2] + (b[2] - a[2]) * t),
   ];
+}
+
+// Framebuffer drawing: color + soft alpha (0..1) for one cell of the
+// moving segment. `k` is the index inside the block, `0 <= k < block`.
+// Alpha peaks at the block center and dissolves at both edges; the shade
+// stays inside the purple family (TO -> HEAD by center proximity).
+export function barCell(k: number, block: number): { color: RGB; alpha: number } {
+  const t = block <= 1 ? 1 : k / (block - 1);
+  void t;
+  const center = Math.sin((Math.PI * (k + 0.5)) / block); // 0 at edges, 1 center
+  const alpha = Math.pow(center, 0.9);
+  const shade = lerp(TO, HEAD, Math.pow(center, 1.2));
+  return { color: lerp(RAIL, shade, alpha), alpha };
+}
+
+function fg([r, g, b]: RGB): string {
+  return `\x1b[38;2;${r};${g};${b}m`;
+}
+
+interface CapturedSpanLike {
+  text: string;
+  fg: { buffer: ArrayLike<number> };
+}
+
+function spansToAnsi(spans: CapturedSpanLike[]): string {
+  let out = "";
+  for (const s of spans) {
+    const r = s.fg.buffer[0] ?? 255;
+    const g = s.fg.buffer[1] ?? 255;
+    const b = s.fg.buffer[2] ?? 255;
+    out += `\x1b[38;2;${r};${g};${b}m${s.text}`;
+  }
+  return out;
 }
 
 class Bar {
@@ -29,10 +65,15 @@ class Bar {
   private dir = 1;
   private status = "";
   private startedAt = 0;
+  // Lazily created so non-TTY runs never pay the @opentui/core import cost.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private fb?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private RGBA?: any;
 
   constructor(
     private label: string,
-    private width = 18,
+    private width = 20,
     private block = 7,
   ) {}
 
@@ -40,26 +81,39 @@ class Bar {
     this.status = s;
   }
 
-  start() {
+  async start() {
     if (this.timer) return;
+    const core = await import("@opentui/core");
+    this.RGBA = core.RGBA;
+    const fb = core.OptimizedBuffer.create(this.width, 1, "unicode", {
+      id: "dbeed-loader",
+      respectAlpha: true,
+    });
+    this.fb = fb;
     this.startedAt = Date.now();
-    this.timer = setInterval(() => this.tick(), 100);
+    this.timer = setInterval(() => this.tick(), 70);
     this.tick();
   }
 
   private tick() {
-    let cells = "";
+    if (!this.fb || !this.RGBA) return;
+    const { fb, RGBA } = this;
+    const transparent = RGBA.fromInts(0, 0, 0, 0);
+    const rail = RGBA.fromInts(RAIL[0], RAIL[1], RAIL[2], 255);
+    fb.clear(transparent);
     for (let i = 0; i < this.width; i++) {
-      if (i >= this.pos && i < this.pos + this.block) {
-        // gradient tail -> bright head in the direction of travel
-        const t = this.block <= 1 ? 1 : (i - this.pos) / (this.block - 1);
-        const edge = this.dir > 0 ? t : 1 - t;
-        const color = edge > 0.85 ? HEAD : lerp(FROM, TO, 1 - edge);
-        cells += `${fg(color)}▀`;
-      } else {
-        cells += `${DIM}─`;
-      }
+      fb.setCell(i, 0, "─", rail, transparent);
     }
+    // Direction-aware head: the leading edge gets the brightest center.
+    for (let k = 0; k < this.block; k++) {
+      const kk = this.dir > 0 ? k : this.block - 1 - k;
+      const idx = this.pos + k;
+      if (idx < 0 || idx >= this.width) continue;
+      const { color } = barCell(kk, this.block);
+      fb.setCell(idx, 0, "─", RGBA.fromInts(color[0], color[1], color[2], 255), transparent);
+    }
+    const spans = fb.getSpanLines()[0]?.spans ?? [];
+    const cells = spansToAnsi(spans);
     this.pos += this.dir;
     if (this.pos + this.block >= this.width || this.pos <= 0) this.dir *= -1;
     const elapsed = ((Date.now() - this.startedAt) / 1000).toFixed(1);
@@ -70,6 +124,10 @@ class Bar {
   stop() {
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
+    try {
+      this.fb?.destroy();
+    } catch {}
+    this.fb = undefined;
     process.stderr.write("\r\x1b[K");
   }
 }
@@ -90,7 +148,7 @@ export async function withLoader<T>(
   const t = setTimeout(
     () => {
       shown = true;
-      bar.start();
+      void bar.start();
     },
     opts?.immediate ? 0 : 250,
   );

@@ -16,3 +16,7 @@ data/
 # env files
 .env
 .env.*
+
+# local agent skills / caches (not part of the product)
+.agents/
+skills-lock.json

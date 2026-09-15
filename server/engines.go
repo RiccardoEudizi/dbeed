@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // --- helpers ---
@@ -50,7 +51,66 @@ func portOpen(port int) bool {
 	return true
 }
 
-func dockerAvailable() bool { return lookPath("docker") != "" }
+func dockerBins() []string {
+	out := []string{}
+	// docker.exe second: plain `docker` may be a WSL-integration shim that
+	// refuses to run; the Windows binary works via interop.
+	for _, b := range []string{"docker", "docker.exe"} {
+		if _, err := exec.LookPath(b); err == nil {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+func dockerAvailable() bool { return len(dockerBins()) > 0 }
+
+// isTransportErr reports transient daemon-connectivity failures (flaky
+// named-pipe/vsock hop to Docker Desktop) that are worth retrying.
+func isTransportErr(out string) bool {
+	lower := strings.ToLower(out)
+	for _, s := range []string{
+		"accept4 failed", "cannot connect", "connection refused",
+		"pipe/docker", "daemon", "context deadline", "no such host",
+		"tls handshake timeout", "broken pipe", "connection reset",
+	} {
+		if strings.Contains(lower, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// runDocker executes the docker CLI, falling back from `docker` to
+// `docker.exe` (WSL shim case) and retrying transient transport errors.
+func runDocker(args ...string) (string, error) {
+	bins := dockerBins()
+	if len(bins) == 0 {
+		return "", fmt.Errorf("docker not found on PATH")
+	}
+	action := ""
+	if len(args) > 0 {
+		action = args[0]
+	}
+	last := ""
+	for _, bin := range bins {
+		for attempt := 0; attempt < 3; attempt++ {
+			out, err := exec.Command(bin, args...).CombinedOutput()
+			if err == nil {
+				return string(out), nil
+			}
+			last = string(out)
+			if strings.Contains(last, "could not be found in this WSL") {
+				break // shim binary, try the next one
+			}
+			if !isTransportErr(last) {
+				return "", fmt.Errorf("docker %s failed: %v: %s", action, err, strings.TrimSpace(last))
+			}
+			time.Sleep(time.Duration(attempt+1) * time.Second)
+		}
+	}
+	return "", fmt.Errorf("docker %s failed after retries: %s", action, strings.TrimSpace(last))
+}
 
 // quoteOpt quotes a path for pg_ctl's -o option string when needed.
 func quoteOpt(s string) string {
@@ -206,9 +266,9 @@ func provisionPostgresDocker(st *Store, name string, port int, user, password, d
 		"-e", "POSTGRES_PASSWORD=" + password,
 		"-e", "POSTGRES_DB=" + database,
 		"postgres:16"}
-	out, err := exec.Command("docker", args...).CombinedOutput()
+	out, err := runDocker(args...)
 	if err != nil {
-		return Instance{}, fmt.Errorf("docker run failed: %v: %s", err, strings.TrimSpace(string(out)))
+		return Instance{}, fmt.Errorf("docker run failed: %v", err)
 	}
 	in := Instance{
 		ID: name, Name: name, DB: "postgres", Engine: "docker",
@@ -224,6 +284,5 @@ func provisionPostgresDocker(st *Store, name string, port int, user, password, d
 }
 
 func dockerExec(name string, args ...string) (string, error) {
-	out, err := exec.Command("docker", append([]string{name}, args...)...).CombinedOutput()
-	return string(out), err
+	return runDocker(append([]string{name}, args...)...)
 }

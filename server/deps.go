@@ -135,8 +135,8 @@ func PostgresDep() DepStatus {
 
 // DockerDep reports docker CLI availability (fallback engine).
 func DockerDep() map[string]any {
-	if p, err := exec.LookPath("docker"); err == nil {
-		return map[string]any{"installed": true, "path": p}
+	if bins := dockerBins(); len(bins) > 0 {
+		return map[string]any{"installed": true, "path": bins[0]}
 	}
 	return map[string]any{"installed": false, "hint": "install Docker Desktop / docker engine, or use --engine native with system postgres"}
 }

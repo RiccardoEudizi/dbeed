@@ -174,7 +174,7 @@ compact OpenTUI `split-footer` panel on the main screen that leaves your
 scrollback intact. ASCII `DB` logo on the left, up to 4 instances with live
 status, selected connection string, all polling every 3s.
 
-`↑/↓` select · `s` start · `t` stop · `d` remove · `r` refresh · `q` quit
+`↑/↓` select · `c` create · `s` start · `t` stop · `d` remove · `r` refresh · `q` quit
 
 ## How it works
 
