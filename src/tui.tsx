@@ -177,61 +177,64 @@ function App(props: { owned: boolean }) {
         <text fg="#64748b">↑/↓ select · c create · s start · t stop · d remove · r refresh · q quit</text>
       </box>
       <Show when={modalOpen()}>
-        <box
-          position="absolute"
-          left="25%"
-          top={2}
-          width="50%"
-          backgroundColor="#0f172a"
-          paddingLeft={2}
-          paddingRight={2}
-          flexDirection="column"
-          gap={1}
-        >
-          <text fg="#a855f7">Create database ({stepNum()}/{totalSteps()})</text>
-          <Show when={step() === 0}>
-            <text>Which database?</text>
-            <tab_select
-              focused
-              selectedBackgroundColor="#3b2d5e"
-              selectedTextColor="#e9d5ff"
-              options={[
-                { name: "postgres", description: "", value: "postgres" },
-                { name: "sqlite", description: "", value: "sqlite" },
-              ]}
-              onChange={(_i, o) => o?.value && setDb(String(o.value))}
-            />
-          </Show>
-          <Show when={step() === 1}>
-            <text>Which engine?</text>
-            <tab_select
-              focused
-              selectedBackgroundColor="#3b2d5e"
-              selectedTextColor="#e9d5ff"
-              options={[
-                { name: "native", description: "", value: "native" },
-                { name: "docker", description: "", value: "docker" },
-              ]}
-              onChange={(_i, o) => o?.value && setEngine(String(o.value))}
-            />
-          </Show>
-          <Show when={step() === 2}>
-            <text>Instance name?</text>
-            <input
-              focused
-              placeholder="my-db"
-              width={24}
-              value={name()}
-              onInput={setName}
-            />
-          </Show>
-          <Show when={creating()}>
-            <text fg="#a855f7">creating…</text>
-          </Show>
-          <Show when={formError()}>
-            <text fg="#f87171">{formError()}</text>
-          </Show>
-          <text fg="#64748b">{step() < 2 ? "←/→ choose · enter next · esc cancel" : "enter create · esc cancel"}</text>
+        <box position="absolute" left={0} top={0} width="100%" height="100%" flexDirection="column" justifyContent="center" alignItems="center">
+          <box
+            width="60%"
+            backgroundColor="#0f172a"
+            paddingLeft={2}
+            paddingRight={2}
+            flexDirection="column"
+            gap={1}
+          >
+            <text fg="#a855f7">Create database ({stepNum()}/{totalSteps()})</text>
+            <Show when={step() === 0}>
+              <text>Which database?</text>
+              <select
+                focused
+                showDescription={false}
+                height={2}
+                selectedBackgroundColor="#7c3aed"
+                selectedTextColor="#ffffff"
+                options={[
+                  { name: "postgres", description: "", value: "postgres" },
+                  { name: "sqlite", description: "", value: "sqlite" },
+                ]}
+                onChange={(_i, o) => o?.value && setDb(String(o.value))}
+              />
+            </Show>
+            <Show when={step() === 1}>
+              <text>Which engine?</text>
+              <select
+                focused
+                showDescription={false}
+                height={2}
+                selectedBackgroundColor="#7c3aed"
+                selectedTextColor="#ffffff"
+                options={[
+                  { name: "native", description: "", value: "native" },
+                  { name: "docker", description: "", value: "docker" },
+                ]}
+                onChange={(_i, o) => o?.value && setEngine(String(o.value))}
+              />
+            </Show>
+            <Show when={step() === 2}>
+              <text>Instance name?</text>
+              <input
+                focused
+                placeholder="my-db"
+                width={24}
+                value={name()}
+                onInput={setName}
+              />
+            </Show>
+            <Show when={creating()}>
+              <text fg="#a855f7">creating…</text>
+            </Show>
+            <Show when={formError()}>
+              <text fg="#f87171">{formError()}</text>
+            </Show>
+            <text fg="#64748b">{step() < 2 ? "↑/↓ choose · enter next · esc cancel" : "enter create · esc cancel"}</text>
+          </box>
         </box>
       </Show>
     </box>
