@@ -24,14 +24,18 @@ function App(props: { owned: boolean }) {
   const [detail, setDetail] = createSignal("connecting to dbeed-server…");
   const renderer = useRenderer();
 
-  // create-modal state
+  // create-modal wizard state
   const [modalOpen, setModalOpen] = createSignal(false);
-  const [field, setField] = createSignal(0); // 0=db, 1=engine, 2=name
+  const [step, setStep] = createSignal(0); // 0=db, 1=engine, 2=name
   const [db, setDb] = createSignal("postgres");
   const [engine, setEngine] = createSignal("native");
   const [name, setName] = createSignal("");
   const [formError, setFormError] = createSignal("");
   const [creating, setCreating] = createSignal(false);
+
+  // sqlite needs no engine choice
+  const totalSteps = () => (db() === "sqlite" ? 2 : 3);
+  const stepNum = () => (step() === 2 ? totalSteps() : step() + 1);
 
   const refresh = async () => {
     try {
@@ -55,7 +59,7 @@ function App(props: { owned: boolean }) {
   const openModal = () => {
     setFormError("");
     setCreating(false);
-    setField(0);
+    setStep(0);
     setModalOpen(true);
   };
 
@@ -64,12 +68,20 @@ function App(props: { owned: boolean }) {
     setCreating(false);
   };
 
+  // wizard: one question at a time; sqlite skips the engine step
+  const advanceModal = () => {
+    if (!modalOpen() || creating()) return;
+    if (step() === 0) setStep(db() === "sqlite" ? 2 : 1);
+    else if (step() === 1) setStep(2);
+    else submitModal();
+  };
+
   const submitModal = () => {
     if (!modalOpen() || creating()) return;
     const n = name().trim();
     if (!n) {
       setFormError("name required");
-      setField(2);
+      setStep(2);
       return;
     }
     setCreating(true);
@@ -110,8 +122,7 @@ function App(props: { owned: boolean }) {
     }
     if (modalOpen()) {
       if (key.name === "escape") closeModal();
-      else if (key.name === "tab") setField((f) => (f + 1) % 3);
-      else if (key.name === "enter" || key.name === "return") submitModal();
+      else if (key.name === "enter" || key.name === "return") advanceModal();
       return; // never leak list keys (s/t/d/r/q…) into typing
     }
     const list = instances();
@@ -168,21 +179,20 @@ function App(props: { owned: boolean }) {
       <Show when={modalOpen()}>
         <box
           position="absolute"
-          left="20%"
-          top={1}
-          width="60%"
-          borderStyle="rounded"
-          borderColor="#a855f7"
+          left="25%"
+          top={2}
+          width="50%"
           backgroundColor="#0f172a"
-          paddingLeft={1}
-          paddingRight={1}
+          paddingLeft={2}
+          paddingRight={2}
           flexDirection="column"
-          title="Create database"
+          gap={1}
         >
-          <box flexDirection="row" gap={1}>
-            <text fg="#64748b">DB:</text>
+          <text fg="#a855f7">Create database ({stepNum()}/{totalSteps()})</text>
+          <Show when={step() === 0}>
+            <text>Which database?</text>
             <tab_select
-              focused={field() === 0}
+              focused
               selectedBackgroundColor="#3b2d5e"
               selectedTextColor="#e9d5ff"
               options={[
@@ -191,11 +201,11 @@ function App(props: { owned: boolean }) {
               ]}
               onChange={(_i, o) => o?.value && setDb(String(o.value))}
             />
-          </box>
-          <box flexDirection="row" gap={1}>
-            <text fg="#64748b">Engine:</text>
+          </Show>
+          <Show when={step() === 1}>
+            <text>Which engine?</text>
             <tab_select
-              focused={field() === 1}
+              focused
               selectedBackgroundColor="#3b2d5e"
               selectedTextColor="#e9d5ff"
               options={[
@@ -204,24 +214,24 @@ function App(props: { owned: boolean }) {
               ]}
               onChange={(_i, o) => o?.value && setEngine(String(o.value))}
             />
-          </box>
-          <box flexDirection="row" gap={1}>
-            <text fg="#64748b">Name:</text>
+          </Show>
+          <Show when={step() === 2}>
+            <text>Instance name?</text>
             <input
-              focused={field() === 2}
-              placeholder="instance name"
+              focused
+              placeholder="my-db"
               width={24}
               value={name()}
               onInput={setName}
             />
-          </box>
+          </Show>
           <Show when={creating()}>
             <text fg="#a855f7">creating…</text>
           </Show>
           <Show when={formError()}>
             <text fg="#f87171">{formError()}</text>
           </Show>
-          <text fg="#64748b">tab next · ←/→ choose · enter create · esc cancel</text>
+          <text fg="#64748b">{step() < 2 ? "←/→ choose · enter next · esc cancel" : "enter create · esc cancel"}</text>
         </box>
       </Show>
     </box>
@@ -231,7 +241,7 @@ function App(props: { owned: boolean }) {
 export async function runTui(owned: boolean) {
   await render(() => <App owned={owned} />, {
     screenMode: "split-footer",
-    footerHeight: 12,
+    footerHeight: 10,
     exitOnCtrlC: true,
   });
 }

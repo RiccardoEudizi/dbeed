@@ -176,6 +176,9 @@ status, selected connection string, all polling every 3s.
 
 `↑/↓` select · `c` create · `s` start · `t` stop · `d` remove · `r` refresh · `q` quit
 
+`c` opens a small borderless step-by-step modal (db → engine → name; sqlite
+skips engine). `←/→` choose · `enter` next · `esc` cancel.
+
 ## How it works
 
 ```
