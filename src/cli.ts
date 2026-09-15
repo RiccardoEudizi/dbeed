@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
+import fs from "node:fs";
 import { ensureServer, serverOwned } from "./ensure-server";
 import { forwardLines, withLoader } from "./loader";
 import { printLogo } from "./logo";
@@ -46,15 +47,46 @@ program
   .action(async (opts) => {
     let { db, engine, name, port, user, password, database } = opts;
     if (!db || !name) {
-      // interactive fallback via readline
-      const rl = (await import("node:readline/promises")).createInterface({ input: process.stdin, output: process.stdout });
-      if (!db) db = (await rl.question("db (postgres|sqlite) [postgres]: ")) || "postgres";
-      if (!name) name = await rl.question("name: ");
+      // Interactive fallback. Bun's readline/promises can stall on the 2nd+
+      // question with piped stdin, so pipes are slurped upfront instead.
+      const piped = process.stdin.isTTY ? [] : fs.readFileSync(0, "utf8").split(/\r?\n/);
+      let li = 0;
+      const rlBox: { current: { question: (q: string) => Promise<string>; close: () => void } | null } = { current: null };
+      const ask = async (q: string): Promise<string> => {
+        if (li < piped.length) {
+          const a = piped[li++];
+          process.stdout.write(`${q}${a}\n`);
+          return a;
+        }
+        if (!process.stdin.isTTY) {
+          process.stdout.write(`${q}\n`);
+          return "";
+        }
+        if (!rlBox.current) {
+          rlBox.current = (await import("node:readline/promises")).createInterface({ input: process.stdin, output: process.stdout });
+        }
+        return rlBox.current.question(q);
+      };
+      try {
+        if (!db) db = (await ask("db (postgres|sqlite) [postgres]: ")) || "postgres";
+        if (db !== "sqlite" && !process.argv.includes("--engine")) {
+          for (;;) {
+            const ans = ((await ask("engine (native|docker) [native]: ")) || "native").toLowerCase();
+            if (ans === "native" || ans === "docker") {
+              engine = ans;
+              break;
+            }
+            console.log("engine must be native or docker");
+          }
+        }
+        if (!name) name = await ask("name: ");
+      } finally {
+        if (rlBox.current) rlBox.current.close();
+      }
       if (!name) {
         console.error("name required");
         process.exit(1);
       }
-      rl.close();
     }
     const inst = await withLoader(`Creating ${db} instance "${name}"…`, () =>
       withServer(() =>

@@ -128,9 +128,9 @@ dbeed server                      # show server discovery info (port/pid/token)
 dbeed --tui                       # mini TUI (also the default with no args)
 ```
 
-`create` without `--db`/`--name` prompts interactively. Ports default to
-`5432` and auto-bump when taken. `remove` never touches databases it didn't
-create.
+`create` without `--db`/`--name` prompts interactively (db, engine unless
+sqlite or `--engine` given, name). Ports default to `5432` and auto-bump when
+taken. `remove` never touches databases it didn't create.
 
 ## Uninstalling
 

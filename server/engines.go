@@ -268,6 +268,7 @@ func provisionPostgresDocker(st *Store, name string, port int, user, password, d
 		"postgres:16"}
 	out, err := runDocker(args...)
 	if err != nil {
+		_ = os.RemoveAll(dataDir)
 		return Instance{}, fmt.Errorf("docker run failed: %v", err)
 	}
 	in := Instance{
