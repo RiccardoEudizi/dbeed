@@ -13,6 +13,17 @@ import { ensureServer } from "./ensure-server";
 
 const MAX_ROWS = 4;
 
+// Same neutral Opencode-style theme as dbm-tui: dark chrome, stone modal,
+// bright selection, no purple.
+const BG_SIDE = "#0e0e11";
+const BG_MAIN = "#1c1917";
+const BG_SELECT = "#292524";
+const BORDER = "#262626";
+const FG = "#e7e5e4";
+const FG_BRIGHT = "#fafaf9";
+const FG_DIM = "#a8a29e";
+const FG_FAINT = "#57534e";
+
 function shortConn(s: string, n = 60): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
@@ -53,7 +64,7 @@ function App(props: { owned: boolean }) {
 
   const updateDetail = (list: Instance[], sel: number) => {
     const cur = list[sel];
-    setDetail(cur ? `${cur.name} [${cur.db}/${cur.engine}] ${cur.status} · ${shortConn(cur.connection)}` : "no instances — press c to create one");
+    setDetail(cur ? `${cur.name} [${cur.db}/${cur.engine}] ${cur.status} | ${shortConn(cur.connection)}` : "no instances — press c to create one");
   };
 
   const openModal = () => {
@@ -154,47 +165,52 @@ function App(props: { owned: boolean }) {
   const hidden = () => instances().length - visible().length;
 
   return (
-    <box borderStyle="single" borderColor="#334155" flexDirection="row" width="100%" paddingLeft={1} paddingRight={1} gap={2}>
+    <box borderStyle="single" borderColor={BORDER} backgroundColor={BG_SIDE} flexDirection="row" width="100%" paddingLeft={1} paddingRight={1} gap={2}>
       <box flexDirection="column" width={21}>
-        <ascii_font text="DB" font="block" color="#a855f7" />
+        <ascii_font text="DB" font="block" color={FG_BRIGHT} />
         <text>🐝</text>
       </box>
       <box flexDirection="column" flexGrow={1}>
-        <text fg="#7dd3fc">dbeed · {counts()}</text>
-        <Show when={instances().length > 0} fallback={<text fg="#64748b">(empty)</text>}>
+        <text fg={FG}>dbeed | {counts()}</text>
+        <Show when={instances().length > 0} fallback={<text fg={FG_FAINT}>(empty)</text>}>
           <For each={visible()}>
-            {(inst, i) => (
-              <text fg={i() === selected() ? "#c084fc" : inst.status === "running" ? "#4ade80" : "#94a3b8"}>
-                {`${i() === selected() ? "▸ " : "  "}${inst.name} (${inst.db}) ${inst.status}`}
-              </text>
-            )}
+            {(inst, i) => {
+              const sel = () => i() === selected();
+              return (
+                <text selectable={false} fg={sel() ? FG_BRIGHT : inst.status === "running" ? FG : FG_DIM} bg={sel() ? BG_SELECT : undefined}>
+                  {`${sel() ? "> " : "  "}${inst.status === "running" ? "*" : "o"} ${inst.name} (${inst.db}) ${inst.status}`}
+                </text>
+              );
+            }}
           </For>
           <Show when={hidden() > 0}>
-            <text fg="#64748b">  … +{hidden()} more</text>
+            <text fg={FG_FAINT}>  … +{hidden()} more</text>
           </Show>
         </Show>
-        <text fg="#94a3b8">{detail()}</text>
-        <text fg="#64748b">↑/↓ select · c create · s start · t stop · d remove · r refresh · q quit</text>
+        <text fg={FG_DIM}>{detail()}</text>
+        <text fg={FG_FAINT}>j/k select | c create | s start | t stop | d remove | r refresh | q quit</text>
       </box>
       <Show when={modalOpen()}>
         <box position="absolute" left={0} top={0} width="100%" height="100%" flexDirection="column" justifyContent="center" alignItems="center">
           <box
             width="60%"
-            backgroundColor="#0f172a"
+            backgroundColor={BG_MAIN}
+            borderStyle="single"
+            borderColor={BORDER}
             paddingLeft={2}
             paddingRight={2}
             flexDirection="column"
             gap={1}
           >
-            <text fg="#a855f7">Create database ({stepNum()}/{totalSteps()})</text>
+            <text fg={FG_BRIGHT}>Create database ({stepNum()}/{totalSteps()})</text>
             <Show when={step() === 0}>
-              <text>Which database?</text>
+              <text fg={FG}>Which database?</text>
               <select
                 focused
                 showDescription={false}
                 height={2}
-                selectedBackgroundColor="#7c3aed"
-                selectedTextColor="#ffffff"
+                selectedBackgroundColor={BG_SELECT}
+                selectedTextColor={FG_BRIGHT}
                 options={[
                   { name: "postgres", description: "", value: "postgres" },
                   { name: "sqlite", description: "", value: "sqlite" },
@@ -203,13 +219,13 @@ function App(props: { owned: boolean }) {
               />
             </Show>
             <Show when={step() === 1}>
-              <text>Which engine?</text>
+              <text fg={FG}>Which engine?</text>
               <select
                 focused
                 showDescription={false}
                 height={2}
-                selectedBackgroundColor="#7c3aed"
-                selectedTextColor="#ffffff"
+                selectedBackgroundColor={BG_SELECT}
+                selectedTextColor={FG_BRIGHT}
                 options={[
                   { name: "native", description: "", value: "native" },
                   { name: "docker", description: "", value: "docker" },
@@ -218,7 +234,7 @@ function App(props: { owned: boolean }) {
               />
             </Show>
             <Show when={step() === 2}>
-              <text>Instance name?</text>
+              <text fg={FG}>Instance name?</text>
               <input
                 focused
                 placeholder="my-db"
@@ -228,12 +244,12 @@ function App(props: { owned: boolean }) {
               />
             </Show>
             <Show when={creating()}>
-              <text fg="#a855f7">creating…</text>
+              <text fg={FG_DIM}>creating…</text>
             </Show>
             <Show when={formError()}>
               <text fg="#f87171">{formError()}</text>
             </Show>
-            <text fg="#64748b">{step() < 2 ? "↑/↓ choose · enter next · esc cancel" : "enter create · esc cancel"}</text>
+            <text fg={FG_FAINT}>{step() < 2 ? "j/k choose | enter next | esc cancel" : "enter create | esc cancel"}</text>
           </box>
         </box>
       </Show>
