@@ -51,6 +51,8 @@ dbeed remove demo
 - Native binaries by default, Docker when you want it — per instance.
 - Missing postgres binaries? `dbeed install postgres` fetches them via your system package manager. Nothing is ever installed implicitly.
 - Mini TUI footer (never fullscreen) with live status, start/stop/remove keys.
+- Fullscreen `dbm` explorer: databases → tables → schema *and* row data,
+  with mouse-click focus and an Opencode-style neutral theme.
 - Script-friendly: human output on TTY, clean machine output on stdout, spinners on stderr, silent when piped.
 
 ## Requirements
@@ -125,6 +127,7 @@ dbeed remove NAME [--keep-data]   # alias: rm — uninstall what dbeed created
 dbeed uninstall [postgres|sqlite] # remove system package (mirror of install)
 dbeed purge [--keep-data] [-f]    # uninstall dbeed itself (see below)
 dbeed server                      # show server discovery info (port/pid/token)
+dbeed dbm [name]                  # fullscreen schema + data explorer
 dbeed --tui                       # mini TUI (also the default with no args)
 ```
 
@@ -192,6 +195,23 @@ status, selected connection string, all polling every 3s.
 `c` opens a small borderless step-by-step modal (db → engine → name; sqlite
 skips engine). `↑/↓` choose · `enter` next · `esc` cancel.
 
+### dbm explorer
+
+`dbeed dbm [name]` opens a **fullscreen** three-pane explorer: databases on
+the left, tables in the middle, detail on the right. Panes focus with `h/l`
+(or mouse click); the focused pane gets the bright border. Sidebars are dark,
+the detail pane uses a stone background.
+
+`tab`/`v` toggles the detail pane between two views:
+
+- **schema** — columns (PKs starred), row counts with `C`/`R`, relations.
+- **data** — live paged rows (100/page): column headers, `NULL` rendering,
+  horizontal column window + row cursor.
+
+Keys: `j/k` rows · `h/l` focus (columns while the grid is focused) ·
+`enter` drill in · `/` filter · `n/p` next/prev page · `esc` back to tables ·
+`s/t/d` start/stop/remove instance · `r` refresh · `q` quit.
+
 ## How it works
 
 ```
@@ -237,6 +257,8 @@ POST   /api/instances                   # {db, engine, name, port?, user?, passw
 GET    /api/instances/:name
 GET    /api/instances/:name/connection
 GET    /api/instances/:name/logs
+GET    /api/instances/:name/schema[?counts=true]   # tables, columns, PKs, relations
+GET    /api/instances/:name/rows?table=T&limit=N&offset=M  # paged row data (NULL-aware)
 POST   /api/instances/:name/start|stop|restart
 DELETE /api/instances/:name[?keepData=true]
 GET    /events                          # SSE status stream (TUI polling uses plain GET)
@@ -247,9 +269,11 @@ POST   /api/shutdown                    # stop the server, keep the databases
 
 ```
 cmd/dbeed-server/   server entrypoint
-server/             Go server: api, store, engines (native/docker), deps, paths
+server/             Go server: api, store, engines (native/docker), deps, paths,
+                    schema (introspection), rows (paged table data)
 src/cli.ts          commander commands (thin HTTP client)
 src/tui.tsx         mini footer TUI (@opentui/solid)
+src/dbm-tui.tsx     fullscreen dbm explorer: schema + data views (@opentui/solid)
 src/api.ts          typed API client + retry
 src/ensure-server.ts spawn/discover/ownership
 src/loader.ts       stderr gradient loader + log collapsing
@@ -270,6 +294,11 @@ bunx tsc --noEmit                 # client typecheck
 - **`initdb refuses root`** → run as a normal user or use `--engine docker`.
 - **Port taken** → dbeed auto-bumps from the requested port; pass `--port` to choose.
 - **Orphaned server** (killed -9 client) → harmless, reused by the next command; kill `dbeed-server` manually to drop it.
+- **New endpoint 404s (e.g. `/rows`) after a server change** → the TUI talks
+  to the prebuilt `dist/dbeed-server`: rebuild it
+  (`go build -o dist/dbeed-server ./cmd/dbeed-server`) and restart the
+  server (kill `dbeed-server`; the next command respawns it). The `compile`
+  script only bundles the TS CLI, never the Go server.
 - **Compiled binary says `preload not found`** → you're running `dist/dbeed` from inside this repo; run it elsewhere or use `bun run src/cli.ts`.
 
 ## Roadmap

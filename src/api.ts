@@ -187,3 +187,50 @@ export const shutdownServer = () =>
   api<{ status: string }>("/api/shutdown", { method: "POST" }, false).catch(
     () => ({ status: "gone" })
   );
+
+export interface SchemaColumn {
+  name: string;
+  type: string;
+  nullable: boolean;
+  default?: string | null;
+  pk?: boolean;
+}
+
+export interface SchemaTable {
+  name: string;
+  schema: string;
+  columns: SchemaColumn[];
+  primaryKey?: string[];
+  rowCount?: number;
+}
+
+export interface SchemaRelation {
+  name: string;
+  from: { table: string; column: string };
+  to: { table: string; column: string };
+}
+
+export interface DbSchema {
+  database: string;
+  db: string;
+  tables: SchemaTable[];
+  relations: SchemaRelation[];
+}
+
+export const getSchema = (name: string, counts = false) =>
+  api<DbSchema>(`/api/instances/${encodeURIComponent(name)}/schema${counts ? "?counts=true" : ""}`);
+
+export interface TableRows {
+  table: string;
+  schema: string;
+  columns: string[];
+  rows: (string | null)[][];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export const getRows = (name: string, table: string, limit = 100, offset = 0) =>
+  api<TableRows>(
+    `/api/instances/${encodeURIComponent(name)}/rows?table=${encodeURIComponent(table)}&limit=${limit}&offset=${offset}`,
+  );

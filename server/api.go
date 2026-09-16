@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -170,6 +171,44 @@ func (a *API) handleInstance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, 200, map[string]string{"logs": readLogs(in)})
+	case r.Method == "GET" && action == "schema":
+		in, err := a.store.Get(name)
+		if err != nil {
+			writeErr(w, 404, err.Error())
+			return
+		}
+		in.Status = liveStatus(in)
+		withCounts := r.URL.Query().Get("counts") == "true" || r.URL.Query().Get("counts") == "1"
+		schema, err := IntrospectSchema(in, withCounts)
+		if err != nil {
+			if mce, ok := err.(*MissingCLIError); ok {
+				writeJSON(w, 500, map[string]string{"error": mce.Error(), "code": "cli_missing"})
+				return
+			}
+			writeErr(w, 500, err.Error())
+			return
+		}
+		writeJSON(w, 200, schema)
+	case r.Method == "GET" && action == "rows":
+		in, err := a.store.Get(name)
+		if err != nil {
+			writeErr(w, 404, err.Error())
+			return
+		}
+		in.Status = liveStatus(in)
+		table := r.URL.Query().Get("table")
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+		rows, err := QueryRows(in, table, limit, offset)
+		if err != nil {
+			if mce, ok := err.(*MissingCLIError); ok {
+				writeJSON(w, 500, map[string]string{"error": mce.Error(), "code": "cli_missing"})
+				return
+			}
+			writeErr(w, 500, err.Error())
+			return
+		}
+		writeJSON(w, 200, rows)
 	case r.Method == "POST" && action == "start":
 		if err := a.start(name); err != nil {
 			writeErr(w, 500, err.Error())

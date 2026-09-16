@@ -375,6 +375,15 @@ program
     console.log(JSON.stringify(info, null, 2));
   });
 
+program
+  .command("dbm [name]")
+  .description("fullscreen DB/table/relation explorer")
+  .action(async (n?: string) => {
+    await ensureServer();
+    const { runDbmTui } = await import("./dbm-tui");
+    await runDbmTui(serverOwned(), n);
+  });
+
 program.option("--tui", "launch interactive TUI");
 
 // Stop the server on exit, but only if this process spawned it — attached
@@ -402,7 +411,8 @@ if (raw.length === 0 || (raw.length === 1 && raw[0] === "--tui")) {
   const { runTui } = await import("./tui");
   await runTui(serverOwned());
 } else {
-  await printLogo();
+  const isDbm = raw[0] === "dbm";
+  if (!isDbm) await printLogo();
   try {
     await program.parseAsync(process.argv);
   } catch (e: any) {
@@ -410,5 +420,7 @@ if (raw.length === 0 || (raw.length === 1 && raw[0] === "--tui")) {
     await stopOwnedServer();
     process.exit(1);
   }
-  await stopOwnedServer();
+  // dbm TUI owns the screen and its own shutdown; commander path above
+  // already ran it — just exit without double stop noise.
+  if (!isDbm) await stopOwnedServer();
 }
