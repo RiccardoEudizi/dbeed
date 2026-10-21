@@ -209,6 +209,31 @@ func (a *API) handleInstance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, 200, rows)
+	case r.Method == "POST" && action == "query":
+		in, err := a.store.Get(name)
+		if err != nil {
+			writeErr(w, 404, err.Error())
+			return
+		}
+		if in.DB == "postgres" && liveStatus(in) != "running" {
+			writeErr(w, 409, "instance is not running")
+			return
+		}
+		var req QueryRequest
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+			writeErr(w, 400, "invalid json")
+			return
+		}
+		res, err := RunQuery(in, req.SQL, req.Limit)
+		if err != nil {
+			if mce, ok := err.(*MissingCLIError); ok {
+				writeJSON(w, 500, map[string]string{"error": mce.Error(), "code": "cli_missing"})
+				return
+			}
+			writeErr(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, 200, res)
 	case r.Method == "POST" && action == "start":
 		if err := a.start(name); err != nil {
 			writeErr(w, 500, err.Error())

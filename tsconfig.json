@@ -8,5 +8,6 @@
     "types": ["bun-types"],
     "jsx": "preserve",
     "jsxImportSource": "@opentui/solid"
-  }
+  },
+  "exclude": ["web", "node_modules", "dist"]
 }

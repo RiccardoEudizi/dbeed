@@ -1,0 +1,203 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink-950: #0a0908;
+  --color-ink-900: #110f0d;
+  --color-ink-850: #161311;
+  --color-ink-800: #1c1815;
+  --color-ink-750: #221d19;
+  --color-ink-700: #2a2521;
+  --color-ink-600: #3a332d;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", ui-monospace, "Cascadia Code", Menlo, monospace;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  background: var(--color-ink-950);
+  color: #e7e5e4;
+  -webkit-font-smoothing: antialiased;
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: rgb(139 92 246 / 0.35);
+  color: #fff;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ink-600) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--color-ink-600);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-md border border-ink-700 bg-ink-800 px-2.5 py-1.5 text-xs font-medium whitespace-nowrap text-stone-300 transition select-none hover:border-ink-600 hover:bg-ink-750 hover:text-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500/60 disabled:pointer-events-none disabled:opacity-40;
+  }
+
+  .btn-primary {
+    @apply border-violet-500/40 bg-violet-500/15 text-violet-200 hover:border-violet-400/60 hover:bg-violet-500/25 hover:text-violet-100;
+  }
+
+  .btn-danger {
+    @apply border-red-500/25 bg-red-500/10 text-red-300 hover:border-red-500/50 hover:bg-red-500/20 hover:text-red-200;
+  }
+
+  .btn-ghost {
+    @apply border-transparent bg-transparent text-stone-400 hover:border-ink-700 hover:bg-ink-800 hover:text-stone-100;
+  }
+
+  .btn-icon {
+    @apply h-7 w-7 p-0;
+  }
+
+  .input {
+    @apply w-full rounded-md border border-ink-700 bg-ink-950 px-2.5 py-1.5 text-sm text-stone-200 outline-none transition placeholder:text-stone-600 focus:border-violet-500/60 focus:ring-2 focus:ring-violet-500/15;
+  }
+
+  .label {
+    @apply mb-1 block text-[10px] font-semibold tracking-[0.12em] text-stone-500 uppercase;
+  }
+
+  .panel {
+    @apply rounded-xl border border-ink-700 bg-ink-900;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium tracking-wide;
+  }
+
+  .link {
+    @apply text-violet-300 underline-offset-2 transition hover:text-violet-200 hover:underline;
+  }
+}
+
+/* --- CodeMirror --- */
+
+.cm-editor {
+  height: 100%;
+  background: transparent;
+  color: #e7e5e4;
+}
+
+.cm-editor.cm-focused {
+  outline: none;
+}
+
+.cm-scroller {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.cm-gutters {
+  background: transparent;
+  border-right: 1px solid var(--color-ink-700);
+  color: var(--color-ink-600);
+  padding-right: 4px;
+}
+
+.cm-activeLineGutter,
+.cm-activeLine {
+  background: rgb(255 255 255 / 0.03);
+}
+
+.cm-cursor {
+  border-left-color: #a78bfa;
+}
+
+.cm-selectionBackground,
+.cm-editor .cm-selectionBackground,
+.cm-content ::selection {
+  background: rgb(139 92 246 / 0.3) !important;
+}
+
+.cm-tooltip {
+  background: var(--color-ink-800);
+  border: 1px solid var(--color-ink-600);
+  border-radius: 6px;
+  color: #e7e5e4;
+}
+
+/* --- mobile --- */
+
+@media (max-width: 767px) {
+  /* iOS zooms focused inputs below 16px; keep the layout steady. */
+  .input,
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  .cm-scroller,
+  .cm-editor .cm-content {
+    font-size: 16px;
+  }
+
+  .cm-line {
+    padding: 0 10px;
+  }
+}
+
+/* --- toasts (sonner-solid) --- */
+
+html .dbeed-toaster {
+  --width: min(380px, calc(100vw - 32px));
+  --border-radius: 10px;
+  font-family: var(--font-sans);
+}
+
+html .dbeed-toaster[data-theme="dark"] {
+  --normal-bg: #161311;
+  --normal-border: #3a332d;
+  --normal-text: #e7e5e4;
+  --success-bg: #052e22;
+  --success-border: #065f46;
+  --success-text: #6ee7b7;
+  --error-bg: #2a0a0a;
+  --error-border: #7f1d1d;
+  --error-text: #fca5a5;
+  --info-bg: #1e1b3a;
+  --info-border: #4c1d95;
+  --info-text: #c4b5fd;
+}
+
+html .dbeed-toaster [data-title] {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+html .dbeed-toaster [data-description] {
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+html .dbeed-toaster [data-close-button] {
+  border-color: var(--normal-border);
+  background: var(--normal-bg);
+  color: var(--normal-text);
+}

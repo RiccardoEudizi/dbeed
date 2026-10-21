@@ -384,6 +384,44 @@ program
     await runDbmTui(serverOwned(), n);
   });
 
+program
+  .command("web")
+  .description("open the web UI (SolidStart)")
+  .option("--port <port>", "port to listen on", "3000")
+  .option("--open", "open the UI in your browser")
+  .action(async (opts: { port: string; open?: boolean }) => {
+    await ensureServer();
+    const { spawn } = await import("node:child_process");
+    const path = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const candidates = [
+      process.env.DBEED_WEB_DIR,
+      path.join(process.cwd(), "web"),
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "web"),
+      path.join(path.dirname(process.execPath), "web"),
+    ].filter(Boolean) as string[];
+    const dir = candidates.find((c) => fs.existsSync(path.join(c, "package.json")));
+    if (!dir) {
+      console.error("error: web/ not found. Run from the dbeed repo or set DBEED_WEB_DIR.");
+      process.exit(1);
+    }
+    const url = `http://127.0.0.1:${opts.port}`;
+    console.log(`dbeed web → ${url}`);
+    if (opts.open) {
+      setTimeout(() => {
+        const opener =
+          process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
+        const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+        spawn(opener, args, { stdio: "ignore", detached: true }).unref();
+      }, 1200);
+    }
+    const child = spawn("bun", ["run", "--cwd", dir, "dev"], {
+      stdio: "inherit",
+      env: { ...process.env, PORT: String(opts.port) },
+    });
+    await new Promise<void>((resolve) => child.on("exit", () => resolve()));
+  });
+
 program.option("--tui", "launch interactive TUI");
 
 // Stop the server on exit, but only if this process spawned it — attached

@@ -8,6 +8,8 @@
   },
   "scripts": {
     "start": "bun run src/cli.ts",
+    "web": "bun run --cwd web dev",
+    "web:build": "bun run --cwd web build",
     "compile": "bun build ./src/cli.ts --compile --outfile ./dist/dbeed"
   },
   "dependencies": {

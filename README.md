@@ -53,6 +53,8 @@ dbeed remove demo
 - Mini TUI footer (never fullscreen) with live status, start/stop/remove keys.
 - Fullscreen `dbm` explorer: databases → tables → schema *and* row data,
   with mouse-click focus and an Opencode-style neutral theme.
+- Optional local web UI (`dbeed web`): manage instances, browse schema/rows and
+  run ad-hoc SQL with a CodeMirror editor and result grid.
 - Script-friendly: human output on TTY, clean machine output on stdout, spinners on stderr, silent when piped.
 
 ## Requirements
@@ -61,6 +63,7 @@ dbeed remove demo
 |----------|----------|---------------------------------------------|
 | Go       | ≥ 1.23   | builds `dbeed-server` (stdlib only, no deps) |
 | Bun      | ≥ 1.3    | runs the CLI client + OpenTUI               |
+| Node     | ≥ 24     | runs the optional web UI (SolidStart v2)     |
 | Docker   | optional | only for `--engine docker`                  |
 | Postgres | optional | only for native postgres (`dbeed install postgres` gets it) |
 
@@ -128,6 +131,7 @@ dbeed uninstall [postgres|sqlite] # remove system package (mirror of install)
 dbeed purge [--keep-data] [-f]    # uninstall dbeed itself (see below)
 dbeed server                      # show server discovery info (port/pid/token)
 dbeed dbm [name]                  # fullscreen schema + data explorer
+dbeed web [--port 3000] [--open]  # local web UI (with SQL editor)
 dbeed --tui                       # mini TUI (also the default with no args)
 ```
 
@@ -212,6 +216,50 @@ Keys: `j/k` rows · `h/l` focus (columns while the grid is focused) ·
 `enter` drill in · `/` filter · `n/p` next/prev page · `esc` back to tables ·
 `s/t/d` start/stop/remove instance · `r` refresh · `q` quit.
 
+## Web UI
+
+`dbeed web` starts a SolidStart v2 app on `127.0.0.1:3000` (`--port` to change,
+`--open` to launch a browser):
+
+```sh
+dbeed web
+# dbeed web → http://127.0.0.1:3000
+```
+
+- **Dashboard** — every instance with live status, connection string (copy),
+  start/stop/restart/remove, logs and dependency hints.
+- **Explorer** — tables sidebar, paged row data (100/page, `NULL` rendered
+  distinctly, click a cell for its full value) and a schema view with columns,
+  primary keys, defaults and relations. Row counts are opt-in.
+- **Query editor** — CodeMirror 6 with SQL highlighting/autocomplete,
+  `⌘/Ctrl+Enter` to run, a configurable row cap (100–1000), CSV export,
+  per-instance history (localStorage) and inline database errors.
+
+The browser never talks to the Go server directly. SolidStart API routes act
+as a local BFF: they read `server.json` from the dbeed data dir and forward
+requests over the unix socket with the `X-Dbeed-Token` header. No extra TCP
+port is opened, the token never reaches the browser, and the Vite server binds
+to `127.0.0.1` only.
+
+Queries run one statement at a time through the `psql` / `sqlite3` CLIs, with
+a default cap of 200 rows (max 1000, `truncated` is reported when hit).
+Postgres statements run with `ON_ERROR_STOP=1`; database errors are surfaced
+verbatim in the result pane.
+
+### Developing the web UI
+
+```sh
+cd web
+bun install          # first run
+bun run dev          # http://127.0.0.1:3000 (ensures dbeed-server itself)
+bunx tsc --noEmit
+bun run build        # Nitro output in web/.output
+bun run start        # http://127.0.0.1:3000 (HOST pinned to loopback)
+```
+
+Use `DBEED_WEB_DIR` if the web directory lives outside the repo when running
+`dbeed web`.
+
 ## How it works
 
 ```
@@ -232,6 +280,9 @@ postgres (pg_ctl / docker) · sqlite files
 - **CLI feedback:** operations slower than ~250ms show a thin purple gradient
   loader on stderr; install output is piped and collapsed onto the same line.
   Stdout stays script-clean; everything is silent when piped.
+- **Web UI:** SolidStart renders the app and proxies `/api/dbeed/*` over the
+  same unix socket. The Go server never opens a TCP port; the token stays in
+  `server.json` and is read by the BFF.
 
 ## Configuration
 
@@ -239,6 +290,7 @@ postgres (pg_ctl / docker) · sqlite files
 |--------------------|--------------------------------------|--------------------------------------|
 | `DBEED_DATA_DIR`   | `~/.local/share/dbeed` (`$XDG_DATA_HOME/dbeed`) | state, instance data, server.json |
 | `DBEED_SERVER_BIN` | searched next to binary, `dist/`, `PATH` | `dbeed-server` executable         |
+| `DBEED_WEB_DIR`    | auto-detected from repo/cwd         | location of the `web/` app for `dbeed web` |
 
 Layout of the data dir: `state.json` (instances, passwords in plaintext —
 local dev only), `server.json` (socket/pid/token — never commit),
@@ -259,6 +311,7 @@ GET    /api/instances/:name/connection
 GET    /api/instances/:name/logs
 GET    /api/instances/:name/schema[?counts=true]   # tables, columns, PKs, relations
 GET    /api/instances/:name/rows?table=T&limit=N&offset=M  # paged row data (NULL-aware)
+POST   /api/instances/:name/query                  # {sql, limit?} → columns/rows/command
 POST   /api/instances/:name/start|stop|restart
 DELETE /api/instances/:name[?keepData=true]
 GET    /events                          # SSE status stream (TUI polling uses plain GET)
@@ -270,7 +323,7 @@ POST   /api/shutdown                    # stop the server, keep the databases
 ```
 cmd/dbeed-server/   server entrypoint
 server/             Go server: api, store, engines (native/docker), deps, paths,
-                    schema (introspection), rows (paged table data)
+                    schema (introspection), rows (paged table data), query
 src/cli.ts          commander commands (thin HTTP client)
 src/tui.tsx         mini footer TUI (@opentui/solid)
 src/dbm-tui.tsx     fullscreen dbm explorer: schema + data views (@opentui/solid)
@@ -278,13 +331,16 @@ src/api.ts          typed API client + retry
 src/ensure-server.ts spawn/discover/ownership
 src/loader.ts       stderr gradient loader + log collapsing
 src/logo.tsx        ASCII DB logo (real ASCIIFont render)
+web/                SolidStart v2 web UI (Solid, Tailwind, Kobalte, CodeMirror)
 ```
 
 ## Development
 
 ```sh
 go vet ./... && go test ./...     # server unit tests (fake-bin engine tests)
-bunx tsc --noEmit                 # client typecheck
+bunx tsc --noEmit                 # CLI typecheck
+cd web && bunx tsc --noEmit       # web typecheck
+cd web && bun run build           # production web build
 ```
 
 ## Troubleshooting
